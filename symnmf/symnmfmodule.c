@@ -1,117 +1,208 @@
-/**
- * @file symnmfmodule.c
- * @brief Python C extension for accelerated SymNMF computations
- * 
- * This module provides a Python interface to the C implementation of
- * Symmetric Non-negative Matrix Factorization multiplicative updates.
- * Uses NumPy C API for efficient array handling.
- */
-
-#define NPY_NO_DEPRECATED_API NPY_1_7_API_VERSION
+#define PY_SSIZE_T_CLEAN
 #include <Python.h>
 #include <numpy/arrayobject.h>
 #include "symnmf.h"
 
-/**
- * @brief Python wrapper for SymNMF multiplicative updates
- * 
- * Performs in-place multiplicative updates on factor matrix H to minimize
- * ||W - HH^T||_F^2 using efficient C implementation.
- * 
- * @param self Module object (unused)
- * @param args Python tuple: (H, W, max_iter, tol, verbose)
- *             H: Factor matrix (n x k), modified in-place
- *             W: Similarity matrix (n x n), read-only
- *             max_iter: Maximum iterations (int)
- *             tol: Convergence tolerance (double) 
- *             verbose: Print progress (int, 0 or 1)
- * @return Python tuple (H_updated, obj_history) or NULL on error
- */
-static PyObject* update_wrapper(PyObject* self, PyObject* args) {
-    PyObject *H_obj, *W_obj;
-    int max_iter;
-    double tol;
-    int verbose;
-    if (!PyArg_ParseTuple(args, "OOidi", &H_obj, &W_obj, &max_iter, &tol, &verbose)) {
-        return NULL;
+// Convert numpy array to C double array
+double** numpy_to_c_array(PyArrayObject* arr, int* rows, int* cols) {
+    *rows = PyArray_DIM(arr, 0);
+    *cols = PyArray_DIM(arr, 1);
+    double** c_arr = alloc_matrix(*rows, *cols);
+    if (!c_arr) return NULL;
+    for (int i = 0; i < *rows; i++) {
+        for (int j = 0; j < *cols; j++) {
+            c_arr[i][j] = *(double*)PyArray_GETPTR2(arr, i, j);
+        }
     }
-
-    PyArrayObject *H_arr = (PyArrayObject*)PyArray_FROM_OTF(H_obj, NPY_DOUBLE, NPY_ARRAY_INOUT_ARRAY);
-    PyArrayObject *W_arr = (PyArrayObject*)PyArray_FROM_OTF(W_obj, NPY_DOUBLE, NPY_ARRAY_IN_ARRAY);
-    if (!H_arr || !W_arr) {
-        Py_XDECREF(H_arr);
-        Py_XDECREF(W_arr);
-        return NULL;
-    }
-
-    int n = (int)PyArray_DIM(H_arr, 0);
-    int k = (int)PyArray_DIM(H_arr, 1);
-
-    if (PyArray_NDIM(W_arr) != 2 || (int)PyArray_DIM(W_arr, 0) != n || (int)PyArray_DIM(W_arr, 1) != n) {
-        PyErr_SetString(PyExc_ValueError, "Shapes must be H(n,k), W(n,n)");
-        Py_DECREF(H_arr);
-        Py_DECREF(W_arr);
-        return NULL;
-    }
-
-    double* H = (double*)PyArray_DATA(H_arr);
-    const double* W = (const double*)PyArray_DATA(W_arr);
-
-    int rc = symnmf_update(H, W, n, k, max_iter, tol, verbose);
-    if (rc != 0) {
-        PyErr_SetString(PyExc_RuntimeError, "symnmf_update failed");
-        Py_DECREF(H_arr);
-        Py_DECREF(W_arr);
-        return NULL;
-    }
-
-    npy_intp shape[1] = {1};
-    PyObject* obj_hist = PyArray_SimpleNew(1, shape, NPY_DOUBLE);
-    if (obj_hist) {
-        double* data = (double*)PyArray_DATA((PyArrayObject*)obj_hist);
-        data[0] = 0.0;
-    }
-
-    PyObject* H_ret = PyArray_Return(H_arr);
-    Py_DECREF(W_arr);
-
-    return Py_BuildValue("NN", H_ret, obj_hist);
+    return c_arr;
 }
 
-/**
- * @brief Method definitions for the SymNMF Python module
- * 
- * Defines the available functions that can be called from Python.
- * Currently provides only the 'update' function for SymNMF computation.
- */
+// Convert C double array to numpy array
+PyObject* c_array_to_numpy(double** arr, int rows, int cols) {
+    npy_intp dims[2] = {rows, cols};
+    PyObject* result = PyArray_SimpleNew(2, dims, NPY_DOUBLE);
+    if (!result) return NULL;
+    for (int i = 0; i < rows; i++) {
+        for (int j = 0; j < cols; j++) {
+            *(double*)PyArray_GETPTR2((PyArrayObject*)result, i, j) = arr[i][j];
+        }
+    }
+    return result;
+}
+
+static PyObject* py_symnmf(PyObject *self, PyObject *args) {
+    PyArrayObject *X_array;
+    int k;
+    
+    if (!PyArg_ParseTuple(args, "O!i", &PyArray_Type, &X_array, &k)) {
+        return NULL;
+    }
+    
+    // Ensure array is contiguous and of correct type
+    X_array = (PyArrayObject*)PyArray_FROM_OTF((PyObject*)X_array, NPY_DOUBLE, NPY_ARRAY_IN_ARRAY);
+    if (X_array == NULL) return NULL;
+    
+    int n, dim;
+    double **points = numpy_to_c_array(X_array, &n, &dim);
+    if (!points) {
+        Py_DECREF(X_array);
+        return NULL;
+    }
+    
+    // Build similarity matrix
+    double **A = alloc_matrix(n, n);
+    if (!A) {
+        free_matrix(points, n);
+        Py_DECREF(X_array);
+        return NULL;
+    }
+    build_similarity_matrix(points, n, dim, A);
+    
+    // Build degree matrix
+    double **D = alloc_matrix(n, n);
+    build_degree_matrix(A, n, D);
+    
+    // Build normalized similarity matrix
+    double **W = alloc_matrix(n, n);
+    build_normalized_similarity_matrix(A, D, n, W);
+    
+    // Calculate mean for initialization
+    double m = 0.0;
+    for (int i = 0; i < n; i++) {
+        for (int j = 0; j < n; j++) {
+            m += W[i][j];
+        }
+    }
+    m /= (n * n);
+    
+    // Initialize H
+    double **H = alloc_matrix(n, k);
+    initialize_H(n, k, m, H);
+    
+    // Run update iterations
+    for (int iter = 0; iter < 500; iter++) {
+        update_H(H, W, n, k, 0.5);
+    }
+    
+    // Convert result to numpy array
+    PyObject *result = c_array_to_numpy(H, n, k);
+    
+    // Clean up
+    free_matrix(points, n);
+    free_matrix(A, n);
+    free_matrix(D, n);
+    free_matrix(W, n);
+    free_matrix(H, n);
+    Py_DECREF(X_array);
+    
+    return result;
+}
+
+static PyObject* py_sym(PyObject *self, PyObject *args) {
+    PyArrayObject *X_array;
+    
+    if (!PyArg_ParseTuple(args, "O!", &PyArray_Type, &X_array)) {
+        return NULL;
+    }
+    
+    X_array = (PyArrayObject*)PyArray_FROM_OTF((PyObject*)X_array, NPY_DOUBLE, NPY_ARRAY_IN_ARRAY);
+    if (X_array == NULL) return NULL;
+    
+    int n, dim;
+    double **points = numpy_to_c_array(X_array, &n, &dim);
+    
+    double **A = alloc_matrix(n, n);
+    build_similarity_matrix(points, n, dim, A);
+    
+    PyObject *result = c_array_to_numpy(A, n, n);
+    
+    free_matrix(points, n);
+    free_matrix(A, n);
+    Py_DECREF(X_array);
+    
+    return result;
+}
+
+static PyObject* py_ddg(PyObject *self, PyObject *args) {
+    PyArrayObject *X_array;
+    
+    if (!PyArg_ParseTuple(args, "O!", &PyArray_Type, &X_array)) {
+        return NULL;
+    }
+    
+    X_array = (PyArrayObject*)PyArray_FROM_OTF((PyObject*)X_array, NPY_DOUBLE, NPY_ARRAY_IN_ARRAY);
+    if (X_array == NULL) return NULL;
+    
+    int n, dim;
+    double **points = numpy_to_c_array(X_array, &n, &dim);
+    
+    double **A = alloc_matrix(n, n);
+    build_similarity_matrix(points, n, dim, A);
+    
+    double **D = alloc_matrix(n, n);
+    build_degree_matrix(A, n, D);
+    
+    PyObject *result = c_array_to_numpy(D, n, n);
+    
+    free_matrix(points, n);
+    free_matrix(A, n);
+    free_matrix(D, n);
+    Py_DECREF(X_array);
+    
+    return result;
+}
+
+static PyObject* py_norm(PyObject *self, PyObject *args) {
+    PyArrayObject *X_array;
+    
+    if (!PyArg_ParseTuple(args, "O!", &PyArray_Type, &X_array)) {
+        return NULL;
+    }
+    
+    X_array = (PyArrayObject*)PyArray_FROM_OTF((PyObject*)X_array, NPY_DOUBLE, NPY_ARRAY_IN_ARRAY);
+    if (X_array == NULL) return NULL;
+    
+    int n, dim;
+    double **points = numpy_to_c_array(X_array, &n, &dim);
+    
+    double **A = alloc_matrix(n, n);
+    build_similarity_matrix(points, n, dim, A);
+    
+    double **D = alloc_matrix(n, n);
+    build_degree_matrix(A, n, D);
+    
+    double **W = alloc_matrix(n, n);
+    build_normalized_similarity_matrix(A, D, n, W);
+    
+    PyObject *result = c_array_to_numpy(W, n, n);
+    
+    free_matrix(points, n);
+    free_matrix(A, n);
+    free_matrix(D, n);
+    free_matrix(W, n);
+    Py_DECREF(X_array);
+    
+    return result;
+}
+
+// Method definitions
 static PyMethodDef SymNMFMethods[] = {
-    {"update", update_wrapper, METH_VARARGS, "Run SymNMF multiplicative updates in C: (H, obj_hist) = update(H, W, max_iter, tol, verbose)"},
+    {"symnmf", py_symnmf, METH_VARARGS, "Perform symnmf and return H."},
+    {"sym", py_sym, METH_VARARGS, "Calculate similarity matrix."},
+    {"ddg", py_ddg, METH_VARARGS, "Calculate diagonal degree matrix."},
+    {"norm", py_norm, METH_VARARGS, "Calculate normalized similarity matrix."},
     {NULL, NULL, 0, NULL}
 };
 
-/**
- * @brief Module definition structure for Python C extension
- * 
- * Defines module metadata including name, documentation, size, and methods.
- * The module provides C-accelerated SymNMF functionality to Python.
- */
-static struct PyModuleDef moduledef = {
+static struct PyModuleDef symnmfmodule = {
     PyModuleDef_HEAD_INIT,
-    "_csymnmf",
-    "C-accelerated SymNMF updates",
-    -1,
+    "symnmf",   // name of module
+    NULL,        // module documentation
+    -1,          // size of per-interpreter state of the module
     SymNMFMethods
 };
 
-/**
- * @brief Module initialization function
- * 
- * Called when the module is imported in Python. Initializes NumPy C API
- * and creates the module object with all defined methods.
- * 
- * @return PyObject* Module object or NULL on failure
- */
-PyMODINIT_FUNC PyInit__csymnmf(void) {
-    import_array();
-    return PyModule_Create(&moduledef);
+PyMODINIT_FUNC PyInit_symnmf(void) {
+    import_array();  // Initialize NumPy C API
+    return PyModule_Create(&symnmfmodule);
 }

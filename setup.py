@@ -1,32 +1,39 @@
 """
 Setup script for SymNMF package.
 
-Builds the package with optional C extensions for performance acceleration.
-The C extension provides faster multiplicative updates for large matrices.
+Builds the package with C extensions for SymNMF computations.
+The C extension provides similarity matrix computation, degree matrix, 
+normalized similarity matrix, and full SymNMF algorithm.
 """
 
 from setuptools import setup, Extension, find_packages
-try:
-    import numpy as np
-    numpy_includes = [np.get_include()]
-except Exception:
-    numpy_includes = []
+import numpy as np
 
+# Define the C extension module
 ext_modules = [
     Extension(
-        name="symnmf._csymnmf",
-        sources=["symnmf/symnmfmodule.c", "symnmf/symnmf.c"],
-        include_dirs=numpy_includes,
-        extra_compile_args=[],
-        extra_link_args=[],
+        name="symnmf",  # This will create the symnmf module
+        sources=[
+            "symnmf/symnmfmodule.c",  # Python C API wrapper
+            "symnmf/symnmf_tools.c"   # Core C functions
+        ],
+        include_dirs=[
+            np.get_include(),  # NumPy headers
+            "symnmf/"          # Local headers (symnmf.h)
+        ],
+        extra_compile_args=["-std=c99", "-O3"],
+        extra_link_args=["-lm"],  # Link math library
     )
 ]
 
 setup(
     name="symnmf",
-    version="0.1.0",
-    description="Symmetric NMF for clustering with optional C acceleration",
+    version="1.0.0",
+    description="Symmetric Non-negative Matrix Factorization with C acceleration",
+    author="Sheer and Maya",
     packages=find_packages(),
     ext_modules=ext_modules,
-    install_requires=["numpy", "scipy", "scikit-learn"],
+    install_requires=["numpy"],
+    python_requires=">=3.6",
+    zip_safe=False,
 )
