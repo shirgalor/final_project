@@ -1,16 +1,17 @@
 CC = gcc
-CFLAGS = -Wall -Wextra -std=c99 -lm
-TARGET = symnmf/symnmf
-SOURCES = symnmf/symnmf.c symnmf/symnmf_tools.c
+CFLAGS = -ansi -Wall -Wextra -Werror -pedantic-errors
+LDFLAGS = -lm
+TARGET = symnmf
+SOURCES = src/symnmf.c src/symnmf_tools.c
 PYTHON ?= ./venv/bin/python
 
 .PHONY: all clean test build_ext
 
 all: $(TARGET)
 
-# Build C executable
+# Build C executable with required flags
 $(TARGET): $(SOURCES)
-	$(CC) -o $(TARGET) $(SOURCES) $(CFLAGS)
+	$(CC) $(CFLAGS) -o $(TARGET) $(SOURCES) $(LDFLAGS)
 
 # Build Python extension
 build_ext: venv
@@ -25,8 +26,8 @@ build: $(TARGET) build_ext
 
 clean:
 	rm -f $(TARGET)
-	rm -rf build dist *.egg-info symnmf/__pycache__ tests/__pycache__
-	rm -f symnmf/*.so symnmf/*.pyd
+	rm -rf build dist *.egg-info src/__pycache__ tests/__pycache__
+	rm -f src/*.so src/*.pyd
 
 test:
 	python -m pytest -q

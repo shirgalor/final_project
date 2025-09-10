@@ -19,6 +19,7 @@ def read_data_points(file_name):
     with open(file_name, 'r') as f:
         lines = f.readlines()
         for line in lines:
+            # Convert line to list of floats
             row = [float(x) for x in line.strip().replace(',', ' ').split() if x]
             if row:
                 points.append(row)

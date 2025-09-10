@@ -14,12 +14,12 @@ ext_modules = [
     Extension(
         name="symnmf",  # This will create the symnmf module
         sources=[
-            "symnmf/symnmfmodule.c",  # Python C API wrapper
-            "symnmf/symnmf_tools.c"   # Core C functions
+            "src/symnmfmodule.c",  # Python C API wrapper
+            "src/symnmf_tools.c",  # Core C functions
         ],
         include_dirs=[
             np.get_include(),  # NumPy headers
-            "symnmf/"          # Local headers (symnmf.h)
+            "src/"             # Local headers (symnmf.h)
         ],
         extra_compile_args=["-std=c99", "-O3"],
         extra_link_args=["-lm"],  # Link math library
