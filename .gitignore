@@ -2,3 +2,9 @@ build/
 *.so
 *.lib
 *.whl
+*.bin
+*.exe
+src/symnmf
+.DS_Store
+__pycache__/
+*.pyc
