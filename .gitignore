@@ -8,3 +8,5 @@ src/symnmf
 .DS_Store
 __pycache__/
 *.pyc
+valgrind/
+valgrind*
