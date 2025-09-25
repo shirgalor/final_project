@@ -211,6 +211,7 @@ def execute_python_program(
 
         pass_fds.append(fd)
 
+    print("running:", " ".join(args))
     result = subprocess.run(
         args,
         capture_output=True,

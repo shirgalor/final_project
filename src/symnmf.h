@@ -22,7 +22,7 @@ void print_matrix(double **mat, int rows, int cols);
 
 /* Memory management functions */
 double **alloc_matrix(int rows, int cols);
-void free_matrix(double **mat, int rows);
+void free_matrix(double **mat);
 
 /* File I/O functions */
 int read_points(const char *filename, double ***points, int *n, int *dim);

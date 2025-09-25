@@ -1,4 +1,5 @@
 #define PY_SSIZE_T_CLEAN
+#define NPY_NO_DEPRECATED_API NPY_1_7_API_VERSION
 #include <Python.h>
 #include <numpy/arrayobject.h>
 #include "symnmf.h"
@@ -42,7 +43,7 @@ static double** build_normalized_matrix(double **points, int n, int dim, double 
     // Build degree matrix
     double **D = alloc_matrix(n, n);
     if (!D) {
-        free_matrix(A, n);
+        free_matrix(A);
         return NULL;
     }
     build_degree_matrix(A, n, D);
@@ -50,8 +51,8 @@ static double** build_normalized_matrix(double **points, int n, int dim, double 
     // Build normalized similarity matrix
     double **W = alloc_matrix(n, n);
     if (!W) {
-        free_matrix(A, n);
-        free_matrix(D, n);
+        free_matrix(A);
+        free_matrix(D);
         return NULL;
     }
     build_normalized_similarity_matrix(A, D, n, W);
@@ -59,48 +60,6 @@ static double** build_normalized_matrix(double **points, int n, int dim, double 
     *A_out = A;
     *D_out = D;
     return W;
-}
-
-// Helper function to calculate mean of a matrix
-static double calculate_matrix_mean(double **matrix, int rows, int cols) {
-    double sum = 0.0;
-    for (int i = 0; i < rows; i++) {
-        for (int j = 0; j < cols; j++) {
-            sum += matrix[i][j];
-        }
-    }
-    return sum / (rows * cols);
-}
-
-// Helper function to cleanup SymNMF matrices
-static void cleanup_symnmf_matrices(double **points, double **A, double **D, double **W, double **H, int n) {
-    if (points) free_matrix(points, n);
-    if (A) free_matrix(A, n);
-    if (D) free_matrix(D, n);
-    if (W) free_matrix(W, n);
-    if (H) free_matrix(H, n);
-}
-
-// Helper function to parse and convert input array
-static double** parse_input_array(PyObject *args, PyArrayObject **X_array, int *k, int *n, int *dim) {
-    if (!PyArg_ParseTuple(args, "O!i", &PyArray_Type, X_array, k)) {
-        return NULL;
-    }
-    
-    *X_array = (PyArrayObject*)PyArray_FROM_OTF((PyObject*)*X_array, NPY_DOUBLE, NPY_ARRAY_IN_ARRAY);
-    if (*X_array == NULL) return NULL;
-    
-    return numpy_to_c_array(*X_array, n, dim);
-}
-
-// Helper function to initialize H matrix from W
-static double** initialize_H_from_W(double **W, int n, int k) {
-    double m = calculate_matrix_mean(W, n, n);
-    double **H = alloc_matrix(n, k);
-    if (!H) return NULL;
-    
-    initialize_H(n, k, m, H);
-    return H;
 }
 
 // Helper function to parse single array input (for sym, ddg, norm functions)
@@ -111,7 +70,7 @@ static double** parse_single_array_input(PyObject *args, PyArrayObject **X_array
     
     *X_array = (PyArrayObject*)PyArray_FROM_OTF((PyObject*)*X_array, NPY_DOUBLE, NPY_ARRAY_IN_ARRAY);
     if (*X_array == NULL) return NULL;
-    
+        
     return numpy_to_c_array(*X_array, n, dim);
 }
 
@@ -120,52 +79,62 @@ static PyObject* cleanup_and_return_matrix(double **points, double **result_matr
                                          PyArrayObject *X_array, int n, int result_n) {
     PyObject *result = c_array_to_numpy(result_matrix, result_n, result_n);
     
-    free_matrix(points, n);
-    free_matrix(result_matrix, result_n);
+    free_matrix(points);
+    free_matrix(result_matrix);
     Py_DECREF(X_array);
     
     return result;
 }
 
 /**
- * Python wrapper for full SymNMF algorithm
- * Input: numpy array of data points (n x dim), number of clusters k
- * Output: factorization matrix H (n x k)
+ * Python wrapper for SymNMF given initial H and similarity matrix W
+ * Input: numpy arrays H (n x k), W (n x n)
+ * Output: updated H (n x k)
  */
 static PyObject* py_symnmf(PyObject *self, PyObject *args) {
-    PyArrayObject *X_array;
-    int k, n, dim;
-    
-    // Parse input and convert to C array
-    double **points = parse_input_array(args, &X_array, &k, &n, &dim);
-    if (!points) {
-        if (X_array) Py_DECREF(X_array);
+    PyArrayObject *H_array, *W_array;
+
+    // Parse arguments: two NumPy arrays
+    if (!PyArg_ParseTuple(args, "O!O!",
+                          &PyArray_Type, &H_array,
+                          &PyArray_Type, &W_array)) {
         return NULL;
     }
-    
-    // Build normalized similarity matrix
-    double **A, **D;
-    double **W = build_normalized_matrix(points, n, dim, &A, &D);
-    if (!W) {
-        free_matrix(points, n);
-        Py_DECREF(X_array);
+    // Ensure both are double (float64) and contiguous
+    H_array = (PyArrayObject*) PyArray_FROM_OTF((PyObject*) H_array, NPY_DOUBLE, NPY_ARRAY_INOUT_ARRAY);
+    W_array = (PyArrayObject*) PyArray_FROM_OTF((PyObject*) W_array, NPY_DOUBLE, NPY_ARRAY_IN_ARRAY);
+
+    if (!H_array || !W_array) {
+        Py_XDECREF(H_array);
+        Py_XDECREF(W_array);
         return NULL;
     }
-    
-    // Initialize and run SymNMF
-    double **H = initialize_H_from_W(W, n, k);
-    if (!H) {
-        cleanup_symnmf_matrices(points, A, D, W, NULL, n);
-        Py_DECREF(X_array);
+    // Get dimensions
+    int n = PyArray_DIM(H_array, 0);
+    int k = PyArray_DIM(H_array, 1);
+
+    // Convert to C double** pointers
+    double **H = numpy_to_c_array(H_array, &n, &k);
+    double **W = numpy_to_c_array(W_array, &n, &n);
+    if (!H || !W) {
+        Py_DECREF(H_array);
+        Py_DECREF(W_array);
         return NULL;
     }
+
+    // Run update loop (beta hardcoded here as 0.5)
     update_H(H, W, n, k, 0.5);
-    
-    // Convert result and cleanup
+
+    // Convert result back to NumPy
     PyObject *result = c_array_to_numpy(H, n, k);
-    cleanup_symnmf_matrices(points, A, D, W, H, n);
-    Py_DECREF(X_array);
-    
+
+    // Free C matrices if numpy_to_c_matrix malloc'd
+    free_matrix(H);
+    free_matrix(W);
+
+    Py_DECREF(H_array);
+    Py_DECREF(W_array);
+
     return result;
 }
 
@@ -188,7 +157,7 @@ static PyObject* py_sym(PyObject *self, PyObject *args) {
     // Build similarity matrix A
     double **A = alloc_matrix(n, n);
     if (!A) {
-        free_matrix(points, n);
+        free_matrix(points);
         Py_DECREF(X_array);
         return NULL;
     }
@@ -217,7 +186,7 @@ static PyObject* py_ddg(PyObject *self, PyObject *args) {
     // Build similarity matrix A
     double **A = alloc_matrix(n, n);
     if (!A) {
-        free_matrix(points, n);
+        free_matrix(points);
         Py_DECREF(X_array);
         return NULL;
     }
@@ -226,15 +195,15 @@ static PyObject* py_ddg(PyObject *self, PyObject *args) {
     // Build degree matrix D
     double **D = alloc_matrix(n, n);
     if (!D) {
-        free_matrix(points, n);
-        free_matrix(A, n);
+        free_matrix(points);
+        free_matrix(A);
         Py_DECREF(X_array);
         return NULL;
     }
     build_degree_matrix(A, n, D);
     
     // Cleanup A and return D
-    free_matrix(A, n);
+    free_matrix(A);
     return cleanup_and_return_matrix(points, D, X_array, n, n);
 }
 
@@ -258,14 +227,13 @@ static PyObject* py_norm(PyObject *self, PyObject *args) {
     double **A, **D;
     double **W = build_normalized_matrix(points, n, dim, &A, &D);
     if (!W) {
-        free_matrix(points, n);
+        free_matrix(points);
         Py_DECREF(X_array);
         return NULL;
     }
-    
     // Cleanup intermediate matrices and return W
-    free_matrix(A, n);
-    free_matrix(D, n);
+    free_matrix(A);
+    free_matrix(D);
     return cleanup_and_return_matrix(points, W, X_array, n, n);
 }
 
@@ -280,13 +248,13 @@ static PyMethodDef SymNMFMethods[] = {
 
 static struct PyModuleDef symnmfmodule = {
     PyModuleDef_HEAD_INIT,
-    "symnmf",   // name of module
+    "symnmf_c",   // name of module
     NULL,        // module documentation
     -1,          // size of per-interpreter state of the module
     SymNMFMethods
 };
 
-PyMODINIT_FUNC PyInit_symnmf(void) {
+PyMODINIT_FUNC PyInit_symnmf_c(void) {
     import_array();  // Initialize NumPy C API
     return PyModule_Create(&symnmfmodule);
 }

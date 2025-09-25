@@ -29,7 +29,7 @@ static void process_sym(double **points, int n, int dim) {
     
     build_similarity_matrix(points, n, dim, A);
     print_matrix(A, n, n);
-    free_matrix(A, n);
+    free_matrix(A);
 }
 
 /* Process ddg goal */
@@ -42,15 +42,15 @@ static void process_ddg(double **points, int n, int dim) {
     
     D = alloc_matrix(n, n);
     if (!D) {
-        free_matrix(A, n);
+        free_matrix(A);
         error_exit(points, n);
     }
     
     build_degree_matrix(A, n, D);
     print_matrix(D, n, n);
     
-    free_matrix(A, n);
-    free_matrix(D, n);
+    free_matrix(A);
+    free_matrix(D);
 }
 
 /* Process norm goal */
@@ -64,7 +64,7 @@ static void process_norm(double **points, int n, int dim) {
     
     D = alloc_matrix(n, n);
     if (!D) {
-        free_matrix(A, n);
+        free_matrix(A);
         error_exit(points, n);
     }
     
@@ -72,17 +72,17 @@ static void process_norm(double **points, int n, int dim) {
     
     W = alloc_matrix(n, n);
     if (!W) {
-        free_matrix(A, n);
-        free_matrix(D, n);
+        free_matrix(A);
+        free_matrix(D);
         error_exit(points, n);
     }
     
     build_normalized_similarity_matrix(A, D, n, W);
     print_matrix(W, n, n);
     
-    free_matrix(A, n);
-    free_matrix(D, n);
-    free_matrix(W, n);
+    free_matrix(A);
+    free_matrix(D);
+    free_matrix(W);
 }
 
 int main(int argc, char *argv[]) {

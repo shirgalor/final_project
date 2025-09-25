@@ -1,3 +1,4 @@
+#define _GNU_SOURCE
 #include <stdio.h>
 #include <stdlib.h>
 #include <math.h>
@@ -173,9 +174,9 @@ void update_H_single_step(double **H, double **W, int n, int k, double beta) {
     
     /* Check if any allocation failed */
     if (!WH || !HTH || !HHTH) {
-        if (WH) free_matrix(WH, n);
-        if (HTH) free_matrix(HTH, k);
-        if (HHTH) free_matrix(HHTH, n);
+        if (WH) free_matrix(WH);
+        if (HTH) free_matrix(HTH);
+        if (HHTH) free_matrix(HHTH);
         return; /* Error condition */
     }
     matrix_multiply(W, H, WH, n, n, k); /* Compute WH = W * H */
@@ -183,9 +184,9 @@ void update_H_single_step(double **H, double **W, int n, int k, double beta) {
     apply_multiplicative_update(H, WH, HHTH, n, k, beta); /* Apply multiplicative update rule */
     
     /* Free temporary matrices */
-    free_matrix(WH, n);
-    free_matrix(HTH, k);
-    free_matrix(HHTH, n);
+    free_matrix(WH);
+    free_matrix(HTH);
+    free_matrix(HHTH);
 }
 /* 1.4.3 */
 /* Full SymNMF algorithm with convergence checking */
@@ -210,7 +211,7 @@ void update_H(double **H, double **W, int n, int k, double beta) {
         }
     }
     /* Free temporary matrix */
-    free_matrix(H_prev, n);
+    free_matrix(H_prev);
 }
 
 /* Print matrix */
@@ -249,29 +250,27 @@ int* hard_clustering(double **H, int n, int k) {
 
 /* Helper to allocate a 2D array */
 double **alloc_matrix(int rows, int cols) {
-    double **mat = (double **)malloc(rows * sizeof(double *));
-    int i, j;
+    double **mat = malloc(rows * sizeof(double*));
+    double *data = malloc(rows * cols * sizeof(double));
+    int i;
+    
     if (!mat) return NULL;
-    for (i = 0; i < rows; ++i) {
-        mat[i] = (double *)malloc(cols * sizeof(double));
-        if (!mat[i]) {
-            /* Free previously allocated memory */
-            for (j = 0; j < i; ++j) {
-                free(mat[j]);
-            }
-            free(mat);
-            return NULL;
-        }
+
+    if (!data) {
+        free(mat);
+        return NULL;
     }
+
+    for (i = 0; i < rows; ++i) {
+        mat[i] = data + i * cols;
+    }
+
     return mat;
 }
 
-/* Helper to free a 2D array */
-void free_matrix(double **mat, int rows) {
-    int i;
-    for (i = 0; i < rows; ++i) {
-        free(mat[i]);
-    }
+/* Helper to free a 2D contiguous array */
+void free_matrix(double **mat) {
+    free(mat[0]);
     free(mat);
 }
 
@@ -380,7 +379,7 @@ int read_points(const char *filename, double ***points, int *n, int *dim) {
     double *vals;
     int count = 0, d = 0, first_line = 1;
     double **pts = NULL;
-    ssize_t line_len;
+    int line_len;
     
     if (!fp) return 0;
     
