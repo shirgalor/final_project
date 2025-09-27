@@ -4,17 +4,6 @@
 #include <math.h>
 #include "symnmf.h"
 
-/* Helper function to cleanup points */
-static void cleanup_points(double **points, int n) {
-    int i;
-    if (points) {
-        for (i = 0; i < n; ++i) {
-            free(points[i]);
-        }
-        free(points);
-    }
-}
-
 /* Helper function to print error and cleanup */
 static void error_exit(double **points, int n) {
     printf("An Error Has Occurred\n");

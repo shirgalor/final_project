@@ -19,10 +19,7 @@ ext_modules = [
         ],
         include_dirs=[
             np.get_include(),  # NumPy headers
-            "./"             # Local headers (symnmf.h)
         ],
-        extra_compile_args=["-std=c99", "-O3"],
-        extra_link_args=["-lm"],  # Link math library
     )
 ]
 

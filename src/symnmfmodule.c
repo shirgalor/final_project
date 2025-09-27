@@ -62,18 +62,6 @@ static double** build_normalized_matrix(double **points, int n, int dim, double 
     return W;
 }
 
-// Helper function to parse single array input (for sym, ddg, norm functions)
-static double** parse_single_array_input(PyObject *args, PyArrayObject **X_array, int *n, int *dim) {
-    if (!PyArg_ParseTuple(args, "O!", &PyArray_Type, X_array)) {
-        return NULL;
-    }
-    
-    *X_array = (PyArrayObject*)PyArray_FROM_OTF((PyObject*)*X_array, NPY_DOUBLE, NPY_ARRAY_IN_ARRAY);
-    if (*X_array == NULL) return NULL;
-        
-    return numpy_to_c_array(*X_array, n, dim);
-}
-
 // Helper function to cleanup and return result for single matrix functions
 static PyObject* cleanup_and_return_matrix(double **points, double **result_matrix, 
                                          PyArrayObject *X_array, int n, int result_n) {
@@ -86,6 +74,44 @@ static PyObject* cleanup_and_return_matrix(double **points, double **result_matr
     return result;
 }
 
+static double** parse_numpy_array(PyObject *obj, PyArrayObject **array, int *rows, int *cols) {
+    *array = (PyArrayObject*)PyArray_FROM_OTF(obj, NPY_DOUBLE, NPY_ARRAY_IN_ARRAY);
+    if (*array == NULL) {
+       Py_XDECREF(*array);
+       return NULL; 
+    }
+    return numpy_to_c_array(*array, rows, cols);
+}
+
+// Helper function to parse single array input (for sym, ddg, norm functions)
+static double** parse_single_array_input(PyObject *args, PyArrayObject **X_array, int *n, int *dim) {
+    if (!PyArg_ParseTuple(args, "O!", &PyArray_Type, X_array)) {
+        return NULL;
+    }
+    
+   return parse_numpy_array((PyObject*)*X_array, X_array, n, dim);
+}
+
+/* Helper function to parse and convert numpy arrays */
+static int parse_double_arrays(PyObject *args, PyArrayObject **H_array, PyArrayObject **W_array, 
+                                    double ***H, double ***W, int *n, int *k) {
+    if (!PyArg_ParseTuple(args, "O!O!", &PyArray_Type, H_array, &PyArray_Type, W_array)) {
+        return 0;
+    }
+
+    *H = parse_numpy_array((PyObject*)*H_array, H_array, n, k);
+    *W = parse_numpy_array((PyObject*)*W_array, W_array, n, n);
+    if (*H == NULL || *W == NULL) {
+        free_matrix(*H);
+        free_matrix(*W);
+        Py_DECREF(*H_array);
+        Py_DECREF(*W_array);
+        return 0;
+    }
+
+    return 1;
+}
+
 /**
  * Python wrapper for SymNMF given initial H and similarity matrix W
  * Input: numpy arrays H (n x k), W (n x n)
@@ -94,31 +120,10 @@ static PyObject* cleanup_and_return_matrix(double **points, double **result_matr
 static PyObject* py_symnmf(PyObject *self, PyObject *args) {
     PyArrayObject *H_array, *W_array;
 
-    // Parse arguments: two NumPy arrays
-    if (!PyArg_ParseTuple(args, "O!O!",
-                          &PyArray_Type, &H_array,
-                          &PyArray_Type, &W_array)) {
-        return NULL;
-    }
-    // Ensure both are double (float64) and contiguous
-    H_array = (PyArrayObject*) PyArray_FROM_OTF((PyObject*) H_array, NPY_DOUBLE, NPY_ARRAY_INOUT_ARRAY);
-    W_array = (PyArrayObject*) PyArray_FROM_OTF((PyObject*) W_array, NPY_DOUBLE, NPY_ARRAY_IN_ARRAY);
-
-    if (!H_array || !W_array) {
-        Py_XDECREF(H_array);
-        Py_XDECREF(W_array);
-        return NULL;
-    }
-    // Get dimensions
-    int n = PyArray_DIM(H_array, 0);
-    int k = PyArray_DIM(H_array, 1);
-
-    // Convert to C double** pointers
-    double **H = numpy_to_c_array(H_array, &n, &k);
-    double **W = numpy_to_c_array(W_array, &n, &n);
-    if (!H || !W) {
-        Py_DECREF(H_array);
-        Py_DECREF(W_array);
+    // Parse arguments and convert to C arrays
+    double **H, **W;
+    int n, k;
+    if (!parse_double_arrays(args, &H_array, &W_array, &H, &W, &n, &k)) {
         return NULL;
     }
 

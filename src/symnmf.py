@@ -4,6 +4,7 @@ import numpy as np
 import symnmf_c  # Import C module
 
 GOALS = ['symnmf', 'sym', 'ddg', 'norm']
+
 # Set random seed at the beginning of the code
 np.random.seed(1234)
 

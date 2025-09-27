@@ -20,14 +20,14 @@ void build_similarity_matrix(double **points, int n, int dim, double **A) {
     for (i = 0; i < n; ++i) {
         for (j = 0; j < n; ++j) {
             if (i != j) {
-                double dist2 = 0.0;
+                double dist = 0.0;
                 /* Compute squared Euclidean distance */
                 for (k = 0; k < dim; ++k) {
                     double diff = points[i][k] - points[j][k];
-                    dist2 += diff * diff;
+                    dist += diff * diff;
                 }
                 /* Gaussian similarity */
-                A[i][j] = exp(-dist2 / 2.0);
+                A[i][j] = exp(-dist / 2.0);
             } else {
                 A[i][j] = 0.0;
             }
@@ -60,7 +60,7 @@ void build_normalized_similarity_matrix(double **A, double **D, int n, double **
     int i, j;
     
     D_inv_sqrt = (double *)malloc(n * sizeof(double));
-    if (!D_inv_sqrt) return; /* Error condition - caller should handle */
+    if (!D_inv_sqrt) return;
     
     /* Compute D^(-1/2) */
     for (i = 0; i < n; ++i) {
@@ -74,19 +74,6 @@ void build_normalized_similarity_matrix(double **A, double **D, int n, double **
     }
     /* Free temporary array */
     free(D_inv_sqrt);
-}
-
-/* 1.4.1 */
-/*  Initialize H for SymNMF */
-void initialize_H(int n, int k, double m, double **H) {
-    double upper = 2.0 * sqrt(m / k);
-    int i, j;
-    /* Fill H with random values in [0, upper) */
-    for (i = 0; i < n; ++i) {
-        for (j = 0; j < k; ++j) {
-            H[i][j] = ((double)rand() / RAND_MAX) * upper;
-        }
-    }
 }
 
 /* Helper function to compute matrix multiplication: C = A * B */
@@ -188,6 +175,7 @@ void update_H_single_step(double **H, double **W, int n, int k, double beta) {
     free_matrix(HTH);
     free_matrix(HHTH);
 }
+
 /* 1.4.3 */
 /* Full SymNMF algorithm with convergence checking */
 void update_H(double **H, double **W, int n, int k, double beta) {
@@ -195,7 +183,7 @@ void update_H(double **H, double **W, int n, int k, double beta) {
     double **H_prev = alloc_matrix(n, k);
     int iter;
     double norm_diff;
-    if (!H_prev) return; /* Error condition */
+    if (!H_prev) return;
     
     for (iter = 0; iter < MAX_ITERATIONS; ++iter) {
         /* Save current H as previous */
@@ -222,30 +210,6 @@ void print_matrix(double **mat, int rows, int cols) {
             printf("%.4f%s", mat[i][j], (j == cols - 1) ? "\n" : ",");
         }
     }
-}
-
-/* 1.5 */
-/* Derive hard clustering from H matrix */
-/* For each row (element), find the column (cluster) with highest association score */
-int* hard_clustering(double **H, int n, int k) {
-    int *clusters = (int *)malloc(n * sizeof(int));
-    int i, j;
-    if (!clusters) return NULL;
-    /* iterate over all elements */
-    for (i = 0; i < n; ++i) {
-        int max_cluster = 0;
-        double max_score = H[i][0];
-        /* Find the cluster with the maximum score */
-        for (j = 1; j < k; ++j) {
-            if (H[i][j] > max_score) {
-                max_score = H[i][j];
-                max_cluster = j;
-            }
-        }
-        /* Assign the cluster index */
-        clusters[i] = max_cluster;
-    }
-    return clusters;
 }
 
 /* Helper to allocate a 2D array */
@@ -311,7 +275,7 @@ static int add_point(double ***pts, int *count, const double *vals, int dim) {
 }
 
 /* Helper function to cleanup allocated points on error */
-static void cleanup_points(double **pts, int count) {
+void cleanup_points(double **pts, int count) {
     int i;
     if (pts) {
         for (i = 0; i < count; ++i) {
@@ -336,7 +300,7 @@ static int parse_line_dynamic(char *line, double **vals, size_t *vals_capacity) 
         if ((size_t)col >= *vals_capacity) {
             *vals_capacity *= 2;
             temp_vals = realloc(*vals, *vals_capacity * sizeof(double));
-            if (!temp_vals) return -1; /* Allocation failed */
+            if (!temp_vals) return -1;
             *vals = temp_vals;
         }
         
@@ -360,14 +324,14 @@ static int process_line(char *line, int *first_line, double **vals, size_t *vals
     
     /* Parse values from the line */
     col = parse_line_dynamic(line, vals, vals_capacity);
-    if (col < 0) return -1; /* Parse error */
+    if (col < 0) return -1;
     if (col == 0) return 0;  /* Empty line */
     
-    /* Add the point to our array */
+    /* Add the point to the array */
     if (!add_point(pts, count, *vals, col)) {
-        return -1; /* Allocation failed */
+        return -1;
     }
-    return col; /* Return dimension */
+    return col;
 }
 
 /* Read points from a file */
@@ -394,7 +358,6 @@ int read_points(const char *filename, double ***points, int *n, int *dim) {
     while ((line_len = getline(&line, &line_capacity, fp)) != -1) {
         int result = process_line(line, &first_line, &vals, &vals_capacity, &pts, &count);
         if (result < 0) {
-            /* Error occurred - cleanup */
             free(line);
             free(vals);
             cleanup_points(pts, count);
