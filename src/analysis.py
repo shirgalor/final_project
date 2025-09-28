@@ -17,18 +17,22 @@ def _parse_arguments():
 
 
 def main():
-    np.random.seed(1234)
+    np.random.seed(1234) # Set random seed for reproducibility
+    
+    # Parse arguments
     args = _parse_arguments()
     assert os.path.exists(args.file_name), "File does not exist"
     X = read_data_points(args.file_name)
     assert 1 < args.k < X.shape[0], "Invalid number of clusters"
     k = args.k
 
+    # Run symnmf and kmeans
     H = handle_goal('symnmf', X, k)
     nmf_labels = np.argmax(H, axis=1)
     centroids = kmeans(k, X.tolist())
     kmeans_labels = get_labels(centroids, X)
     
+    # Calculate silhouette scores
     nmf_score = silhouette_score(X, nmf_labels)
     kmeans_score = silhouette_score(X, kmeans_labels)
     print(f"nmf: {nmf_score:.4f}")
@@ -36,5 +40,9 @@ def main():
 
   
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except Exception:
+        print("An Error Has Occurred")
+        exit(1)
     

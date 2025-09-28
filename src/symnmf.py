@@ -29,6 +29,7 @@ def read_data_points(file_name):
     return np.array(points)
 
 def initialize_H(W, k):
+    """Initialize H matrix for symnmf with random values"""
     m = np.mean(W)
     n = W.shape[0]
     upper = 2.0 * np.sqrt(m / k)
@@ -67,7 +68,7 @@ def main():
         result = handle_goal(args.goal, X, args.k)
         print_matrix(result)
     except Exception as e:
-        print(f"An Error Has Occurred: {e}")
+        print(f"An Error Has Occurred")
         exit(1)
 
 if __name__ == "__main__":

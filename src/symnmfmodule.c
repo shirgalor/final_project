@@ -4,13 +4,13 @@
 #include <numpy/arrayobject.h>
 #include "symnmf.h"
 
-// Convert numpy array to C double array
+/* Convert numpy array to C double array */
 double** numpy_to_c_array(PyArrayObject* arr, int* rows, int* cols) {
     *rows = PyArray_DIM(arr, 0);
     *cols = PyArray_DIM(arr, 1);
     double** c_arr = alloc_matrix(*rows, *cols);
     if (!c_arr) return NULL;
-    // Copy data from numpy array to C array
+    /* Copy data from numpy array to C array */
     for (int i = 0; i < *rows; i++) {
         for (int j = 0; j < *cols; j++) {
             c_arr[i][j] = *(double*)PyArray_GETPTR2(arr, i, j);
@@ -19,12 +19,12 @@ double** numpy_to_c_array(PyArrayObject* arr, int* rows, int* cols) {
     return c_arr;
 }
 
-// Convert C double array to numpy array
+/* Convert C double array to numpy array */
 PyObject* c_array_to_numpy(double** arr, int rows, int cols) {
     npy_intp dims[2] = {rows, cols};
     PyObject* result = PyArray_SimpleNew(2, dims, NPY_DOUBLE);
     if (!result) return NULL;
-    // Copy data from C array to numpy array
+    /* Copy data from C array to numpy array */
     for (int i = 0; i < rows; i++) {
         for (int j = 0; j < cols; j++) {
             *(double*)PyArray_GETPTR2((PyArrayObject*)result, i, j) = arr[i][j];
@@ -33,14 +33,14 @@ PyObject* c_array_to_numpy(double** arr, int rows, int cols) {
     return result;
 }
 
-// Helper function to build the full SymNMF pipeline (A, D, W matrices)
+/* Helper function to build the full SymNMF pipeline (A, D, W matrices) */
 static double** build_normalized_matrix(double **points, int n, int dim, double ***A_out, double ***D_out) {
-    // Build similarity matrix
+    /* Build similarity matrix */
     double **A = alloc_matrix(n, n);
     if (!A) return NULL;
     build_similarity_matrix(points, n, dim, A);
     
-    // Build degree matrix
+    /* Build degree matrix */
     double **D = alloc_matrix(n, n);
     if (!D) {
         free_matrix(A);
@@ -48,7 +48,7 @@ static double** build_normalized_matrix(double **points, int n, int dim, double 
     }
     build_degree_matrix(A, n, D);
     
-    // Build normalized similarity matrix
+    /* Build normalized similarity matrix */
     double **W = alloc_matrix(n, n);
     if (!W) {
         free_matrix(A);
@@ -62,7 +62,7 @@ static double** build_normalized_matrix(double **points, int n, int dim, double 
     return W;
 }
 
-// Helper function to cleanup and return result for single matrix functions
+/* Helper function to cleanup and return result for single matrix functions */
 static PyObject* cleanup_and_return_matrix(double **points, double **result_matrix, 
                                          PyArrayObject *X_array, int n, int result_n) {
     PyObject *result = c_array_to_numpy(result_matrix, result_n, result_n);
@@ -83,7 +83,7 @@ static double** parse_numpy_array(PyObject *obj, PyArrayObject **array, int *row
     return numpy_to_c_array(*array, rows, cols);
 }
 
-// Helper function to parse single array input (for sym, ddg, norm functions)
+/* Helper function to parse single array input (for sym, ddg, norm functions) */
 static double** parse_single_array_input(PyObject *args, PyArrayObject **X_array, int *n, int *dim) {
     if (!PyArg_ParseTuple(args, "O!", &PyArray_Type, X_array)) {
         return NULL;
@@ -120,20 +120,20 @@ static int parse_double_arrays(PyObject *args, PyArrayObject **H_array, PyArrayO
 static PyObject* py_symnmf(PyObject *self, PyObject *args) {
     PyArrayObject *H_array, *W_array;
 
-    // Parse arguments and convert to C arrays
+    /* Parse arguments and convert to C arrays */
     double **H, **W;
     int n, k;
     if (!parse_double_arrays(args, &H_array, &W_array, &H, &W, &n, &k)) {
         return NULL;
     }
 
-    // Run update loop (beta hardcoded here as 0.5)
+    /* Run update loop (beta hardcoded here as 0.5) */
     update_H(H, W, n, k, 0.5);
 
-    // Convert result back to NumPy
+    /* Convert result back to NumPy */
     PyObject *result = c_array_to_numpy(H, n, k);
 
-    // Free C matrices if numpy_to_c_matrix malloc'd
+    /* Free C matrices if numpy_to_c_matrix malloc'd */
     free_matrix(H);
     free_matrix(W);
 
@@ -152,14 +152,14 @@ static PyObject* py_sym(PyObject *self, PyObject *args) {
     PyArrayObject *X_array;
     int n, dim;
     
-    // Parse input array
+    /* Parse input array */
     double **points = parse_single_array_input(args, &X_array, &n, &dim);
     if (!points) {
         if (X_array) Py_DECREF(X_array);
         return NULL;
     }
     
-    // Build similarity matrix A
+    /* Build similarity matrix A */
     double **A = alloc_matrix(n, n);
     if (!A) {
         free_matrix(points);
@@ -168,7 +168,7 @@ static PyObject* py_sym(PyObject *self, PyObject *args) {
     }
     build_similarity_matrix(points, n, dim, A);
     
-    // Return result
+    /* Return result */
     return cleanup_and_return_matrix(points, A, X_array, n, n);
 }
 
@@ -181,14 +181,14 @@ static PyObject* py_ddg(PyObject *self, PyObject *args) {
     PyArrayObject *X_array;
     int n, dim;
     
-    // Parse input array
+    /* Parse input array */
     double **points = parse_single_array_input(args, &X_array, &n, &dim);
     if (!points) {
         if (X_array) Py_DECREF(X_array);
         return NULL;
     }
     
-    // Build similarity matrix A
+    /* Build similarity matrix A */
     double **A = alloc_matrix(n, n);
     if (!A) {
         free_matrix(points);
@@ -197,7 +197,7 @@ static PyObject* py_ddg(PyObject *self, PyObject *args) {
     }
     build_similarity_matrix(points, n, dim, A);
     
-    // Build degree matrix D
+    /* Build degree matrix D */
     double **D = alloc_matrix(n, n);
     if (!D) {
         free_matrix(points);
@@ -207,7 +207,7 @@ static PyObject* py_ddg(PyObject *self, PyObject *args) {
     }
     build_degree_matrix(A, n, D);
     
-    // Cleanup A and return D
+    /* Cleanup A and return D */
     free_matrix(A);
     return cleanup_and_return_matrix(points, D, X_array, n, n);
 }
@@ -221,14 +221,14 @@ static PyObject* py_norm(PyObject *self, PyObject *args) {
     PyArrayObject *X_array;
     int n, dim;
     
-    // Parse input array
+    /* Parse input array */
     double **points = parse_single_array_input(args, &X_array, &n, &dim);
     if (!points) {
         if (X_array) Py_DECREF(X_array);
         return NULL;
     }
     
-    // Build A, D, W matrices using existing helper
+    /* Build A, D, W matrices using existing helper */
     double **A, **D;
     double **W = build_normalized_matrix(points, n, dim, &A, &D);
     if (!W) {
@@ -236,13 +236,13 @@ static PyObject* py_norm(PyObject *self, PyObject *args) {
         Py_DECREF(X_array);
         return NULL;
     }
-    // Cleanup intermediate matrices and return W
+    /* Cleanup intermediate matrices and return W */
     free_matrix(A);
     free_matrix(D);
     return cleanup_and_return_matrix(points, W, X_array, n, n);
 }
 
-// Method definitions
+/* Method definitions */
 static PyMethodDef SymNMFMethods[] = {
     {"symnmf", py_symnmf, METH_VARARGS, "Perform symnmf and return H."},
     {"sym", py_sym, METH_VARARGS, "Calculate similarity matrix."},
@@ -253,13 +253,13 @@ static PyMethodDef SymNMFMethods[] = {
 
 static struct PyModuleDef symnmfmodule = {
     PyModuleDef_HEAD_INIT,
-    "symnmf_c",   // name of module
-    NULL,        // module documentation
-    -1,          // size of per-interpreter state of the module
+    "symnmf_c",
+    NULL,
+    -1,
     SymNMFMethods
 };
 
 PyMODINIT_FUNC PyInit_symnmf_c(void) {
-    import_array();  // Initialize NumPy C API
+    import_array();
     return PyModule_Create(&symnmfmodule);
 }
